@@ -9,17 +9,14 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--export([forward/1, backward/1, rotate/2, go_to_point/2, stop/0, position/0]).
+-export([forward/1, backward/1, rotate/2, stop/0]).
 
 -define(SERVER, ?MODULE). 
 
 -define(D90, 535). %% 90 degrees in milliseconds
 -define(D180, 1222). %% 180 degrees in milliseconds
 
--record(position, 
-	{x, y, theta,
-	 pending,
-	 actions=[]}).
+-record(state, {from = none, timeout = 0}).
 
 %%%===================================================================
 %%% API
@@ -35,7 +32,6 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-
 forward(T) ->
     gen_server:call(?SERVER, {call, forward, T}, infinity).
 
@@ -47,17 +43,11 @@ rotate(T, left) ->
 rotate(T, right) ->
     gen_server:call(?SERVER, {call, rotate, T, right}, infinity).
 
-go_to_point(X, Y) ->
-    gen_server:call(?SERVER, {call, go_to_point, X, Y}, infinity).
-
-position() ->
-    gen_server:call(?SERVER, {call, position}).
-
 stop() ->
     gen_server:call(?SERVER, {call, stop}).
 
 stop_server() ->
-    gen_server:cast(?SERVER, {cast, stop}).
+    gen_server:cast(?SERVER, {cast, stop_server}).
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -76,7 +66,9 @@ stop_server() ->
 init([]) ->
     i2c_servo:init(),
     i2c_servo:setPWMFreq(60),
-    {ok, #position{x = 0, y = 0, theta = 0}}.
+    application:start(gproc),
+    chronos:start_link(motor_timer),
+    {ok, #state{}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -92,125 +84,43 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({call, position}, _From, State) ->
-    Reply = {State#position.x, State#position.y, State#position.theta},
-    {reply, Reply, State};
 
-handle_call({call, forward, T}, _From, State) ->
-    Reply = motor_forward(T),
-    {reply, Reply, State};
+handle_call({call, forward, T}, From, _State) ->
+    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
+    motor_forward(),
+    NewState = #state{from = From, timeout = T},
+    {noreply, NewState};
 
-handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x =< X, State#position.y =< Y ->
-    DeltaX = X - State#position.x, 
-    DeltaY = Y - State#position.y
-    Actions0 = [{set, theta, 0},
-		{forward,DeltaX},
-		{update,x,DeltaX}, 
-		{rotate, left, ?D90}, 
-		{forward, DeltaY},
-	        {update, y, DeltaY},
-		{set, theta, 90}],
+handle_call({call, backward, T}, From, _State) ->
+    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
+    motor_backward(),
+    NewState = #state{from = From, timeout = T},
+    {noreply, NewState};
+
+handle_call({call, rotate, T, left}, From, _State) ->
+    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
+    motor_rotate(left),
+    NewState = #state{from = From, timeout = T},
+    {noreply, NewState};
+
+handle_call({call, rotate, T, right}, From, _State) ->
+    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
+    motor_rotate(right),
+    NewState = #state{from = From, timeout = T},
+    {noreply, NewState};
+
+handle_call({call, stop}, _From, State) ->
+    motor_stop(),
+    case chronos:stop_timer(motor_timer, stop_motor) of
+	not_running ->
+	    gen_server:reply(State#state.from, State#state.timeout);	    
+	{ok, T} ->
+	    gen_server:reply(State#state.from, T)
+    end,
+    NewState = #state{from = none, timeout = 0},
+    Reply = ok,
+    {reply, Reply, NewState}.
     
-    case State#position.theta of
-	90 ->
-	    motor_rotate(?D90, right);
-	180 ->
-	    motor_rotate(?D180, right);
-	270 ->
-	    motor_rotate(?D90, left);
-	0 ->
-	    ok
-    end,
-    Xnew = motor_forward(X - State#position.x),
-    motor_rotate(?D90, left),
-    Ynew = motor_forward(Y - State#position.y),
-    NewState = #position{x = State#position.x + Xnew, y = State#position.y + Ynew, theta = 90},
-    Reply = {Xnew, Ynew},
-    {reply, Reply, NewState};
-handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x >= X, State#position.y >= Y ->
-    case State#position.theta of
-	0 ->
-	    motor_rotate(?D180, right);
-	90 ->
-	    motor_rotate(?D90, left);
-	270 ->
-	    motor_rotate(?D90, right);
-	180 ->
-	    ok
-    end,
-    Xnew = motor_forward(State#position.x - X),
-    motor_rotate(?D90, left),
-    Ynew = motor_forward(State#position.y - Y),
-    NewState = #position{x = State#position.x - Xnew, y = State#position.y - Ynew, theta = 270},
-    Reply = {Xnew, Ynew},
-    {reply, Reply, NewState};
-handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x >= X, State#position.y =< Y ->
-    case State#position.theta of
-	0 ->
-	    motor_rotate(?D180, left);
-	90 ->
-	    motor_rotate(?D90, left);
-	270 ->
-	    motor_rotate(?D90, right);
-	180 ->
-	    ok
-    end,
-    Xnew = motor_forward(State#position.x - X),
-    motor_rotate(?D90, right),
-    Ynew = motor_forward(Y - State#position.y),
-    NewState = #position{x = State#position.x - Xnew, y = State#position.y + Ynew, theta = 90},
-    Reply = {Xnew, Ynew},
-    {reply, Reply, NewState};
-handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x =< X, State#position.y >= Y ->
-    case State#position.theta of
-	0 ->
-	    ok;
-	90 ->
-	    motor_rotate(?D90, right);
-	180 ->
-	    motor_rotate(?D180, left);
-	270 ->
-	    motor_rotate(?D90, left)
-    end,
-    Xnew = motor_forward(X - State#position.x),
-    motor_rotate(?D90, right),
-    Ynew = motor_forward(State#position.y - Y),
-    NewState = #position{x = State#position.x + Xnew, y = State#position.y - Ynew, theta = 270},
-    Reply = {Xnew, Ynew},
-    {reply, Reply, NewState};
-
-handle_call({call, backward, T}, _From, State) ->
-    timer:sleep(10),
-    i2c_servo:setPWM(0,0,150),
-    i2c_servo:setPWM(1,0,600),
-    timer:sleep(T),
-    motor_stop(),
-    Reply = ok,
-    {reply, Reply, State};
-
-handle_call({call, rotate, T, left}, _From, State) ->
-    motor_rotate(T, left),
-    Reply = ok,
-    {reply, Reply, State};
-
-handle_call({call, rotate, T, right}, _From, State) ->
-    Reply = motor_rotate(T, right),
-    {reply, Reply, State};
-
-handle_call({call, stop}, _From, State#position{actions=[Next|Actions]}) ->
-    motor_stop(),
-    S1 = update_state(Next, State),
-    case Actions of
-	[] ->
-	    Reply = ok,
-	    {reply, Reply, S1#position{actions=[]}};
-	[Action|Rest] ->
-	    start_action(Action), 
-	    {noreply, S1#position{actions=Rest}}
-    end.
-
-update_state({set, theta, V}, S) ->
-    S#state{theta=V}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -222,7 +132,7 @@ update_state({set, theta, V}, S) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({cast, stop}, State) ->
+handle_cast({cast, stop_server}, State) ->
     {stop, normal, State}.
 
 %%--------------------------------------------------------------------
@@ -235,9 +145,7 @@ handle_cast({cast, stop}, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({detect_obstacle, true}, State) ->
-    {ok, Timer} = chronos:stop_timer(motor_timer, stop_timer),
-    motor_stop(),
+handle_info(_Info, State) ->
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -269,54 +177,25 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-motor_forward(T) ->
+motor_forward() ->
     timer:sleep(10),
-    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
     i2c_servo:setPWM(0,0,600),
-    i2c_servo:setPWM(1,0,150),
-    sharp:detect_obstacle().
-%%    receive
-%%	{detect_obstacle, true} ->
-%%	    motor_stop(),
-%%	    T2 = now(),
-%%	    trunc(timer:now_diff(T2, T1) * 0.001)
-%%    after
-%%	T ->
-%%	    motor_stop(),
-%%	    T
-%%    end.
+    i2c_servo:setPWM(1,0,150).
 
-motor_rotate(T, left) ->
+motor_backward() ->
     timer:sleep(10),
-    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
     i2c_servo:setPWM(0,0,150),
-    i2c_servo:setPWM(1,0,150);
-motor_rotate(T, right) ->
-    timer:sleep(10),
-    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
-    i2c_servo:setPWM(0,0,600),
     i2c_servo:setPWM(1,0,600).
 
-%% rotate_compass(Degrees, left) ->
-%%     i2c_servo:setPWM(0, 0, 150),
-%%     i2c_servo:setPWM(1, 0, 150),
-%%     compass:rotate_degrees(Degrees, left),
-%%     receive
-%% 	{rotate_degrees, true} ->
-%% 	    stop()
-%%     end;
-%% rotate_compass(Degrees, right) ->
-%%     i2c_servo:setPWM(0, 0, 600),
-%%     i2c_servo:setPWM(1, 0, 600),
-%%     compass:rotate_degrees(Degrees, right),
-%%     receive
-%% 	{rotate_degrees, true} ->
-%% 	    stop()
-%%     end.
+motor_rotate(left) ->
+    timer:sleep(10),
+    i2c_servo:setPWM(0,0,150),
+    i2c_servo:setPWM(1,0,150);
+motor_rotate(right) ->
+    timer:sleep(10),
+    i2c_servo:setPWM(0,0,600),
+    i2c_servo:setPWM(1,0,600).
 
 motor_stop() ->
     i2c_servo:setPWM(0,0,0),
     i2c_servo:setPWM(1,0,0).
-
-%%stop(Channel) ->
-%%    i2c_servo:setPWM(Channel, 0, 0).
