@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, stop/0, read/0, detect_obstacle/0]).
+-export([start_link/0, stop/0, read/0, alarm_obstacle/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -38,8 +38,8 @@ stop() ->
 read() ->
     gen_server:call(?SERVER, {call, read}).
 
-detect_obstacle() ->
-    gen_server:cast(?SERVER, {cast, detect_obstacle, self()}).
+alarm_obstacle(Mod, Func, Arg) ->
+    gen_server:cast(?SERVER, {cast, alarm_obstacle, Mod, Func, Arg}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -89,10 +89,11 @@ handle_call({call, read}, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({cast, detect_obstacle, From}, State) ->
-    Reply = wait_obstacle(read_distance()),
-    From ! {detect_obstacle, Reply},
+handle_cast({cast, alarm_obstacle, Mod, Func, Arg}, State) ->
+    wait_obstacle(read_distance()),
+    apply(Mod, Func, Arg),
     {noreply, State};
+
 handle_cast(stop, State) ->
     {stop, normal, State}.
 
