@@ -176,3 +176,9 @@ wait_obstacle(StartTime, Timeout, _Distance) ->
 	    timeout
     end.
 
+start_timer(T) ->
+    chronos:start_timer(sharp_ts, read_timer, T,
+                        {gen_server, cast, read_distance}).
+
+stop_timer() ->
+    chronos:stop_timer(sharp_ts, read_timer).
