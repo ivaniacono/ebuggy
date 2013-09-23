@@ -16,7 +16,7 @@
 -define(D90, 535). %% 90 degrees in milliseconds
 -define(D180, 1222). %% 180 degrees in milliseconds
 
--record(state, {from = none, timeout = 0}).
+-record(state, {requestor = undefined, timeout = 0}).
 
 %%%===================================================================
 %%% API
@@ -67,7 +67,7 @@ init([]) ->
     i2c_servo:init(),
     i2c_servo:setPWMFreq(60),
     application:start(gproc),
-    chronos:start_link(motor_timer),
+    {ok, _} = chronos:start_link(motor_ts),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -86,38 +86,38 @@ init([]) ->
 %%--------------------------------------------------------------------
 
 handle_call({call, forward, T}, From, _State) ->
-    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
+    chronos:start_timer(motor_ts, stop_motor, T, {motor, stop, []}),
     motor_forward(),
-    NewState = #state{from = From, timeout = T},
+    NewState = #state{requestor = From, timeout = T},
     {noreply, NewState};
 
 handle_call({call, backward, T}, From, _State) ->
-    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
+    chronos:start_timer(motor_ts, stop_motor, T, {motor, stop, []}),
     motor_backward(),
-    NewState = #state{from = From, timeout = T},
+    NewState = #state{requestor = From, timeout = T},
     {noreply, NewState};
 
 handle_call({call, rotate, T, left}, From, _State) ->
-    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
+    chronos:start_timer(motor_ts, stop_motor, T, {motor, stop, []}),
     motor_rotate(left),
-    NewState = #state{from = From, timeout = T},
+    NewState = #state{requestor = From, timeout = T},
     {noreply, NewState};
 
 handle_call({call, rotate, T, right}, From, _State) ->
-    chronos:start_timer(motor_timer, stop_motor, T, {motor, stop, []}),
+    chronos:start_timer(motor_ts, stop_motor, T, {motor, stop, []}),
     motor_rotate(right),
-    NewState = #state{from = From, timeout = T},
+    NewState = #state{requestor = From, timeout = T},
     {noreply, NewState};
 
 handle_call({call, stop}, _From, State) ->
     motor_stop(),
-    case chronos:stop_timer(motor_timer, stop_motor) of
+    case chronos:stop_timer(motor_ts, stop_motor) of
 	not_running ->
-	    gen_server:reply(State#state.from, State#state.timeout);	    
+	    gen_server:reply(State#state.requestor, State#state.timeout);	    
 	{ok, T} ->
-	    gen_server:reply(State#state.from, T)
+	    gen_server:reply(State#state.requestor, T)
     end,
-    NewState = #state{from = none, timeout = 0},
+    NewState = #state{requestor = undefined, timeout = 0},
     Reply = ok,
     {reply, Reply, NewState}.
     
