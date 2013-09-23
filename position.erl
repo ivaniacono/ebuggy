@@ -9,7 +9,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--export([go_to_point/2, position/0]).
+-export([go_to_point/2, now/0]).
 
 -define(SERVER, ?MODULE). 
 
@@ -17,7 +17,7 @@
 -define(D180, 1222). %% 180 degrees in milliseconds
 
 -record(position, 
-	{x, y, theta,
+	{x = 0, y = 0, theta = 0,
 	 pending,
 	 actions=[]}).
 
@@ -38,8 +38,8 @@ start_link() ->
 go_to_point(X, Y) ->
     gen_server:call(?SERVER, {call, go_to_point, X, Y}, infinity).
 
-position() ->
-    gen_server:call(?SERVER, {call, position}).
+now() ->
+    gen_server:call(?SERVER, {call, now}).
 
 stop_server() ->
     gen_server:cast(?SERVER, {cast, stop}).
@@ -79,7 +79,7 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({call, position}, _From, State) ->
+handle_call({call, now}, _From, State) ->
     Reply = {State#position.x, State#position.y, State#position.theta},
     {reply, Reply, State};
 
@@ -105,9 +105,10 @@ handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x =< X,
 	0 ->
 	    ok
     end,
-    sharp:alarm_obstacle(motor, stop, []),
+    sharp:alarm_obstacle(DeltaX, {motor, stop, []}),
     Xnew = motor:forward(DeltaX),
     motor:rotate(?D90, left),
+    sharp:alarm_obstacle(DeltaY, {motor, stop, []}),
     Ynew = motor:forward(DeltaY),
     NewState = #position{x = State#position.x + Xnew, y = State#position.y + Ynew, theta = 90},
     Reply = {Xnew, Ynew},
@@ -126,9 +127,10 @@ handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x >= X,
 	180 ->
 	    ok
     end,
-    sharp:alarm_obstacle(motor, stop, []),
+    sharp:alarm_obstacle(DeltaX, {motor, stop, []}),
     Xnew = motor:forward(DeltaX),
     motor:rotate(?D90, left),
+    sharp:alarm_obstacle(DeltaY, {motor, stop, []}),
     Ynew = motor:forward(DeltaY),
     NewState = #position{x = State#position.x - Xnew, y = State#position.y - Ynew, theta = 270},
     Reply = {Xnew, Ynew},
@@ -147,9 +149,10 @@ handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x >= X,
 	180 ->
 	    ok
     end,
-    sharp:alarm_obstacle(motor, stop, []),
+    sharp:alarm_obstacle(DeltaX, {motor, stop, []}),
     Xnew = motor:forward(DeltaX),
     motor:rotate(?D90, right),
+    sharp:alarm_obstacle(DeltaY, {motor, stop, []}),
     Ynew = motor:forward(DeltaY),
     NewState = #position{x = State#position.x - Xnew, y = State#position.y + Ynew, theta = 90},
     Reply = {Xnew, Ynew},
@@ -168,9 +171,10 @@ handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x =< X,
 	270 ->
 	    motor:rotate(?D90, left)
     end,
-    sharp:alarm_obstacle(motor, stop, []),
+    sharp:alarm_obstacle(DeltaX, {motor, stop, []}),
     Xnew = motor:forward(DeltaX),
     motor:rotate(?D90, right),
+    sharp:alarm_obstacle(DeltaY, {motor, stop, []}),
     Ynew = motor:forward(DeltaY),
     NewState = #position{x = State#position.x + Xnew, y = State#position.y - Ynew, theta = 270},
     Reply = {Xnew, Ynew},
