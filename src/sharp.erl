@@ -157,7 +157,7 @@ read_distance() ->
 wait_obstacle(Timeout) ->
     wait_obstacle(now(), Timeout, read_distance()).
 
-wait_obstacle(StartTime, Timeout, {error, out_of_range})  ->
+wait_obstacle(StartTime, Timeout, {error, out_of_range}) ->
     case (timer:now_diff(now(), StartTime) * 0.001) =< Timeout of
 	true ->
 	    timer:sleep(10),
@@ -175,10 +175,3 @@ wait_obstacle(StartTime, Timeout, _Distance) ->
 	false ->
 	    timeout
     end.
-
-start_timer(T) ->
-    chronos:start_timer(sharp_ts, read_timer, T,
-                        {gen_server, cast, read_distance}).
-
-stop_timer() ->
-    chronos:stop_timer(sharp_ts, read_timer).
