@@ -1,6 +1,6 @@
 PROJECT = ebuggy
 
-DEPS = chronos
+DEPS = chronos erlang_ale
 
 dep_erlang_ale = https://github.com/esl/erlang_ale master
 dep_chronos = https://github.com/lehoff/chronos master
@@ -11,7 +11,8 @@ include erlang.mk
 REBAR_DEPS_DIR=${DEPS_DIR}
 
 init:
-	mkdir -p priv ebin
+	mkdir -p ebin
+	ln -s deps/erlang_ale/priv
 
 all: init ebuggy
 
@@ -19,7 +20,7 @@ ebuggy:
 	erlc -o ebin/ src/*.erl
 
 shell: 
-	sudo erl -pz deps/*/ebin deps/erlang-ale/deps/*/ebin -pz ebin
+	sudo erl -pz deps/erlang_ale/deps/*/ebin -pz deps/*/ebin -pz ebin 
 
 clean:
 	rm -rf *.beam ebin/*.beam
