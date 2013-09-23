@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, stop/0, read/0, alarm_obstacle/3]).
+-export([start_link/0, stop/0, read/0, alarm_obstacle/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -38,8 +38,8 @@ stop() ->
 read() ->
     gen_server:call(?SERVER, {call, read}).
 
-alarm_obstacle(Mod, Func, Arg) ->
-    gen_server:cast(?SERVER, {cast, alarm_obstacle, Mod, Func, Arg}).
+alarm_obstacle(Timeout, {Mod, Func, Arg}) ->
+    gen_server:cast(?SERVER, {cast, alarm_obstacle, Timeout, {Mod, Func, Arg}}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -89,9 +89,13 @@ handle_call({call, read}, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({cast, alarm_obstacle, Mod, Func, Arg}, State) ->
-    wait_obstacle(read_distance()),
-    apply(Mod, Func, Arg),
+handle_cast({cast, alarm_obstacle, Timeout, {Mod, Func, Arg}}, State) ->
+    case wait_obstacle(Timeout) of
+	obstacle ->
+	    apply(Mod, Func, Arg);
+	timeout ->
+	    ok
+    end,
     {noreply, State};
 
 handle_cast(stop, State) ->
@@ -150,11 +154,25 @@ read_distance() ->
 	    41.543 * math:pow(Volts + 0.30221, -1.5281) 
     end.
 
-wait_obstacle({error, out_of_range}) ->
-    timer:sleep(10),
-    wait_obstacle(read_distance());
-wait_obstacle(Distance) when Distance =< 6.5 ->
-    true;
-wait_obstacle(_Distance) ->
-    timer:sleep(10),
-    wait_obstacle(read_distance()).
+wait_obstacle(Timeout) ->
+    wait_obstacle(now(), Timeout, read_distance()).
+
+wait_obstacle(StartTime, Timeout, {error, out_of_range})  ->
+    case (timer:now_diff(now(), StartTime) * 0.001) =< Timeout of
+	true ->
+	    timer:sleep(10),
+	    wait_obstacle(StartTime, Timeout, read_distance());
+	false ->
+	    timeout
+    end;
+wait_obstacle(_StartTime, _Timeout, Distance) when Distance =< 6.5 ->
+    obstacle;
+wait_obstacle(StartTime, Timeout, _Distance) ->
+    case (timer:now_diff(now(), StartTime) * 0.001) =< Timeout of
+	true ->
+	    timer:sleep(10),
+	    wait_obstacle(StartTime, Timeout, read_distance());
+	false ->
+	    timeout
+    end.
+
