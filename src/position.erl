@@ -9,7 +9,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--export([go_to_point/2, now/0]).
+-export([go_to_point/2, position/0, stop_motor/1]).
 
 -define(SERVER, ?MODULE). 
 
@@ -17,7 +17,7 @@
 -define(D180, 1222). %% 180 degrees in milliseconds
 
 -record(position, 
-	{x = 0, y = 0, theta = 0,
+	{x, y, theta,
 	 pending,
 	 actions=[]}).
 
@@ -36,13 +36,16 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 go_to_point(X, Y) ->
-    gen_server:call(?SERVER, {call, go_to_point, X, Y}, infinity).
+    gen_server:call(?SERVER, {go_to_point, X, Y}, infinity).
 
-now() ->
-    gen_server:call(?SERVER, {call, now}).
+position() ->
+    gen_server:call(?SERVER, {position}).
+
+stop_motor(Time, Var) ->
+    gen_server:call(?SERVER, {stop_motor, Time, Var}).
 
 stop_server() ->
-    gen_server:cast(?SERVER, {cast, stop}).
+    gen_server:cast(?SERVER, stop).
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -63,6 +66,7 @@ init([]) ->
     i2c_servo:setPWMFreq(60),
     sharp:start_link(),
     motor:start_link(),
+    {ok, _} = chronos:start_link(motor_ts),
     {ok, #position{}}.
 
 %%--------------------------------------------------------------------
@@ -79,11 +83,18 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({call, now}, _From, State) ->
+handle_call({position}, _From, State) ->
     Reply = {State#position.x, State#position.y, State#position.theta},
     {reply, Reply, State};
 
-handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x =< X, State#position.y =< Y ->
+handle_call({stop_motor, Time, x}, _From, State) ->
+    {reply, Reply, State};
+handle_call({stop_motor, Time, y}, _From, State) ->
+    {reply, Reply, State};
+handle_call({stop_motor, Time, theta}, _From, State) ->
+    {reply, Reply, State};
+
+handle_call({go_to_point, X, Y}, _From, State) when State#position.x =< X, State#position.y =< Y ->
     DeltaX = X - State#position.x, 
     DeltaY = Y - State#position.y,
 
@@ -105,15 +116,19 @@ handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x =< X,
 	0 ->
 	    ok
     end,
-    sharp:alarm_obstacle(DeltaX, {motor, stop, []}),
-    Xnew = motor:forward(DeltaX),
-    motor:rotate(?D90, left),
-    sharp:alarm_obstacle(DeltaY, {motor, stop, []}),
-    Ynew = motor:forward(DeltaY),
+    sharp:alarm_obstacle(),
+    chronos:start_timer(motor_ts, motor_forward_stop, DeltaX, {position, stop_motor, [DeltaX, x]}),
+    motor:forward(),
+    chronos:start_timer(motor_ts, motor_rotate_stop, ?D90, {position, stop_motor, [?D90, theta]}),
+    motor:rotate(left),
+    chronos:start_timer(motor_ts, motor_forward_stop, DeltaY, {position, stop_motor, [DeltaY, y]}),
+    motor:forward(),
+
     NewState = #position{x = State#position.x + Xnew, y = State#position.y + Ynew, theta = 90},
     Reply = {Xnew, Ynew},
     {reply, Reply, NewState};
-handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x >= X, State#position.y >= Y ->
+
+handle_call({go_to_point, X, Y}, _From, State) when State#position.x >= X, State#position.y >= Y ->
     DeltaX = State#position.x - X,
     DeltaY = State#position.y - Y,
 
@@ -127,15 +142,14 @@ handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x >= X,
 	180 ->
 	    ok
     end,
-    sharp:alarm_obstacle(DeltaX, {motor, stop, []}),
+    sharp:alarm_obstacle(motor, stop, []),
     Xnew = motor:forward(DeltaX),
     motor:rotate(?D90, left),
-    sharp:alarm_obstacle(DeltaY, {motor, stop, []}),
     Ynew = motor:forward(DeltaY),
     NewState = #position{x = State#position.x - Xnew, y = State#position.y - Ynew, theta = 270},
     Reply = {Xnew, Ynew},
     {reply, Reply, NewState};
-handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x >= X, State#position.y =< Y ->
+handle_call({go_to_point, X, Y}, _From, State) when State#position.x >= X, State#position.y =< Y ->
     DeltaX = State#position.x - X,
     DeltaY = Y - State#position.y,
     
@@ -149,15 +163,14 @@ handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x >= X,
 	180 ->
 	    ok
     end,
-    sharp:alarm_obstacle(DeltaX, {motor, stop, []}),
+    sharp:alarm_obstacle(motor, stop, []),
     Xnew = motor:forward(DeltaX),
     motor:rotate(?D90, right),
-    sharp:alarm_obstacle(DeltaY, {motor, stop, []}),
     Ynew = motor:forward(DeltaY),
     NewState = #position{x = State#position.x - Xnew, y = State#position.y + Ynew, theta = 90},
     Reply = {Xnew, Ynew},
     {reply, Reply, NewState};
-handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x =< X, State#position.y >= Y ->
+handle_call({go_to_point, X, Y}, _From, State) when State#position.x =< X, State#position.y >= Y ->
     DeltaX = X - State#position.x,
     DeltaY = State#position.y - Y,
 
@@ -171,17 +184,17 @@ handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x =< X,
 	270 ->
 	    motor:rotate(?D90, left)
     end,
-    sharp:alarm_obstacle(DeltaX, {motor, stop, []}),
+    sharp:alarm_obstacle(motor, stop, []),
+    chronos:start_timer(sharp_ts, read_timer, 10, {gen_server, cast, read_distance}).
     Xnew = motor:forward(DeltaX),
     motor:rotate(?D90, right),
-    sharp:alarm_obstacle(DeltaY, {motor, stop, []}),
     Ynew = motor:forward(DeltaY),
     NewState = #position{x = State#position.x + Xnew, y = State#position.y - Ynew, theta = 270},
     Reply = {Xnew, Ynew},
     {reply, Reply, NewState}.
 
 
-%% handle_call({call, stop}, _From, State#position{actions=[Next|Actions]}) ->
+%% handle_call(stop, _From, State#position{actions=[Next|Actions]}) ->
 %%     motor_stop(),
 %%     S1 = update_state(Next, State),
 %%     case Actions of
@@ -206,7 +219,7 @@ handle_call({call, go_to_point, X, Y}, _From, State) when State#position.x =< X,
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({cast, stop}, State) ->
+handle_cast(stop, State) ->
     {stop, normal, State}.
 
 %%--------------------------------------------------------------------
@@ -219,7 +232,9 @@ handle_cast({cast, stop}, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(_Info, State) ->
+handle_info(obstacle_present, State) ->
+    {ok, Time} = chronos:stop_timer(motor_ts, stop_motor),
+    gen_server:call(?SERVER, {stop_motor, Time, Var}).
     {noreply, State}.
 
 %%--------------------------------------------------------------------
