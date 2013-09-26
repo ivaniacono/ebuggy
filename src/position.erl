@@ -9,7 +9,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--export([go_to_point/2, position/0, stop_motor/1]).
+-export([go_to_point/2, now/0, stop_motor/1]).
 
 -define(SERVER, ?MODULE). 
 
@@ -41,7 +41,7 @@ go_to_point(X, Y) ->
     gen_server:call(?SERVER, {go_to_point, X, Y}, infinity).
 
 now() ->
-    gen_server:call(?SERVER, {now}).
+    gen_server:call(?SERVER, now).
 
 stop_motor(Time) ->
     gen_server:call(?SERVER, {stop_motor, Time}).
@@ -85,7 +85,7 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({now}, _From, State) ->
+handle_call(now, _From, State) ->
     Reply = {State#position.x, State#position.y, State#position.theta},
     {reply, Reply, State};
 
@@ -101,14 +101,10 @@ handle_call({go_to_point, X, Y}, From, State) when State#position.x =< X, State#
     	        {update, y, DeltaY},
     		{update, theta, 90}],
 
-    %% NewState = #position{x = State#position.x + Xnew, y = State#position.y + Ynew, theta = 90},
-    %% Reply = {Xnew, Ynew},
-    execute_action(
-    NewState = #position{actions=Actions1, requestor = From, pending = actions1},
-    start_actions(Actions1, State),
-    {noreply, NewState};
+    NewState = start_actions(Actions1, State),
+    {noreply, NewState#position{actions = Actions1, requestor = From, pending = actions1}};
 
-handle_call({go_to_point, X, Y}, _From, State) when State#position.x >= X, State#position.y >= Y ->
+handle_call({go_to_point, X, Y}, From, State) when State#position.x >= X, State#position.y >= Y ->
     DeltaX = State#position.x - X,
     DeltaY = State#position.y - Y,
 
@@ -120,13 +116,10 @@ handle_call({go_to_point, X, Y}, _From, State) when State#position.x >= X, State
     	        {update, y, DeltaY},
     		{update, theta, 270}],    
 
-    %% NewState = #position{x = State#position.x - Xnew, y = State#position.y - Ynew, theta = 270},
-    %% Reply = {Xnew, Ynew},
-    NewState = #position{actions=Actions2, requestor = From, pending = actions2},
-    start_actions(Actions1, State),
-    {noreply, NewState};
+    NewState = start_actions(Actions2, State),
+    {noreply, NewState#position{actions = Actions2, requestor = From, pending = actions2}};
 
-handle_call({go_to_point, X, Y}, _From, State) when State#position.x >= X, State#position.y =< Y ->
+handle_call({go_to_point, X, Y}, From, State) when State#position.x >= X, State#position.y =< Y ->
     DeltaX = State#position.x - X,
     DeltaY = Y - State#position.y,
 
@@ -138,13 +131,10 @@ handle_call({go_to_point, X, Y}, _From, State) when State#position.x >= X, State
     	        {update, y, DeltaY},
     		{update, theta, 90}],
 
-    %% NewState = #position{x = State#position.x - Xnew, y = State#position.y + Ynew, theta = 90},
-    %% Reply = {Xnew, Ynew},
-    NewState = #position{actions=Actions3, requestor = From, pending = actions3},
-    start_actions(Actions1, State),
-    {noreply, NewState};
+    NewState = start_actions(Actions3, State),
+    {noreply, NewState#position{actions=Actions3, requestor = From, pending = actions3}};
 
-handle_call({go_to_point, X, Y}, _From, State) when State#position.x =< X, State#position.y >= Y ->
+handle_call({go_to_point, X, Y}, From, State) when State#position.x =< X, State#position.y >= Y ->
     DeltaX = X - State#position.x,
     DeltaY = State#position.y - Y,
 
@@ -156,23 +146,27 @@ handle_call({go_to_point, X, Y}, _From, State) when State#position.x =< X, State
     	        {update, y, DeltaY},
     		{update, theta, 270}],
 
-    %% NewState = #position{x = State#position.x + Xnew, y = State#position.y - Ynew, theta = 270},
-    %% Reply = {Xnew, Ynew},
-    NewState = #position{actions=Actions4, requestor = From, pending = actions4},
-    start_actions(Actions1, State),
-    {noreply, NewState};
+    NewState = start_actions(Actions4, State),
+    {noreply, NewState#position{actions=Actions4, requestor = From, pending = actions4}};
 
-handle_call({stop_motor, Time}, _From, State#position{actions=[Next | Actions]}) ->
+handle_call({update_state, NewState}, _From, _State) ->
+    State = start_actions(NewState#position.actions, NewState),
+    {noreply, State};
+
+handle_call({stop_motor, Time}, _From, State#position{actions = [H | T]}) ->
     motor:stop(),
-%%    S1 = update_state(Next, State),
-    case Actions of
-	[] ->
-	    gen_server:reply(State#position.requestor, {State#position.x, State#position.y}),
-	    {reply, ok, State};
-	[Action | Rest] ->
-	    execute_action(Action),
-	    {noreply, State#position{actions = Rest}
-    end.
+    case element(1, H) of
+	execute ->
+	    NewState = execute_action(H, State),
+	    {noreply, NewState#position{actions = Actions, timeout = Time}};
+	update ->
+	    NewState = execute_action(H, State),
+	    gen_server:call(?SERVER, {update_state, NewState})
+    end;
+handle_call({stop_motor, Time}, _From, State#position{actions = []}) ->
+    motor:stop(),
+    gen_server:reply(State#position.requestor, {State#position.x, State#position.y}),
+    {reply, ok, State#position{timeout = Time}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -198,8 +192,8 @@ handle_cast(stop, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(obstacle_present, State) ->
-    %% {ok, Time} = chronos:stop_timer(motor_ts, stop_motor),
-    %% gen_server:call(?SERVER, {stop_motor, Time, Var}).
+    {ok, Time} = chronos:stop_timer(motor_ts, stop_motor),
+    gen_server:call(?SERVER, {stop_motor, Time}),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -231,42 +225,67 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-execute_action({forward, Time}, _State) ->
+execute_action({execute, forward, Time}, State) ->
     sharp:alarm_obstacle(),
     chronos:start_timer(motor_ts, motor_stop, Time, {position, stop_motor, [Time]}),
-    motor:forward();
-execute_action({rotate, Direction, Time}, _State) ->
+    motor:forward(),
+    State;
+execute_action({execute, rotate, Direction, Time}, State) ->
     sharp:alarm_obstacle(),
     chronos:start_timer(motor_ts, motor_stop, Time, {position, stop_motor, [Time]}),
-    motor:rotate(Direction);
-execute_action({theta, 0}, State) ->
-   case State#position.theta of
+    motor:rotate(Direction),
+    State;
+execute_action({execute, theta, 0}, State) ->
+    case State#position.theta of
        90 ->
-	    motor:rotate(?D90, right);
-	180 ->
-	    motor:rotate(?D180, right);
-	270 ->
-	    motor:rotate(?D90, left);
-	0 ->
-	    ok
-   end;
-execute_action({theta, 180}, State) ->
+	   execute_action({execute, rotate, right, ?D90}, State);
+%%	   motor:rotate(?D90, right);
+       180 ->
+	   execute_action({execute, rotate, right, ?D180}, State);
+%%	   motor:rotate(?D180, right);
+       270 ->
+	   execute_action({execute, rotate, left, ?D90}, State);
+%%	   motor:rotate(?D90, left);
+       0 ->
+	   ok
+    end;
+execute_action({execute, theta, 180}, State) ->
     case State#position.theta of
 	0 ->
-	    motor:rotate(?D180, right);
+	    execute_action({execute, rotate, right, ?D180}, State);
+%%	    motor:rotate(?D180, right);
 	90 ->
-	    motor:rotate(?D90, left);
+	    execute_action({execute, rotate, left, ?D90}, State);
+%%	    motor:rotate(?D90, left);
 	270 ->
-	    motor:rotate(?D90, right);
+	    execute_action({execute, rotate, right, ?D90}, State);
+%%	    motor:rotate(?D90, right);
 	180 ->
 	    ok
     end;
-execute_action({update, x, V}, State) ->
-    State#state{x=V};
-execute_action({update, y, V}, State) ->
-    State#state{y=V};
+%% update x: start point is =< of end point
+execute_action({update, x, DeltaX}, 
+	       State#position{x = Xold, timeout = Timeout, pending = Pending}) when Pending == actions1;
+										    Pending == actions4 ->
+    State#position{x = Xold + Timeout};
+%% update x: start point is >= of end point
+execute_action({update, x, DeltaX},
+	       State#position{x = Xold, timeout = Timeout, pending = Pending}) when Pending == actions2;
+										    Pending == actions3 ->
+    State#position{x = Xold - Timeout};
+%% update y: start point is =< of end point
+execute_action({update, y, DeltaY}, 
+	       State#position{y = Yold, timeout = Timeout, pending = Pending}) when Pending == actions1;
+										    Pending == actions3 ->
+    State#position{y = Yold + Timeout};
+%% update y: start point is >= of end point
+execute_action({update, y, DeltaY}, 
+	       State#position{y = Yold, timeout = Timeout, pending = Pending}) when Pending == actions2;
+										    Pending == actions4 ->
+    State#position{y = Yold - Timeout};
+%% update theta
 execute_action({update, theta, V}, State) ->
-    State#state{theta=V}.
+    State#position{theta=V}.
 
-start_action([H | T], State) ->
-    execute_action(H, State).
+start_actions([H | T], State) ->
+    execute_action(H, State#position{actions = T}).
