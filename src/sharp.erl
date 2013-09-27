@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, stop/0, read/0, alarm_obstacle/2]).
+-export([start_link/0, stop/0, read/0, alarm_obstacle/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -38,8 +38,8 @@ stop() ->
 read() ->
     gen_server:call(?SERVER, {call, read}).
 
-alarm_obstacle(Timeout, {Mod, Func, Arg}) ->
-    gen_server:cast(?SERVER, {cast, alarm_obstacle, Timeout, {Mod, Func, Arg}}).
+alarm_obstacle() ->
+ok.%%    gen_server:cast(?SERVER, {cast, alarm_obstacle}).
 
 %%%===================================================================
 %%% gen_server callbacks
