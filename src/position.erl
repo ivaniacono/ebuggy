@@ -97,7 +97,7 @@ handle_call({go_to_point, X, Y}, From, State) when State#position.x =< X, State#
     Actions1 = [{execute, theta, 0},
     		{execute, forward, DeltaX},
     		{update, x}, 
-    		{execute, rotate, left, ?D90}, 
+    		{execute, rotate, left, ?D90},
     		{execute, forward, DeltaY},
     	        {update, y},
     		{update, theta, 90}],
@@ -192,21 +192,22 @@ handle_cast({stop_motor, Time}, State) when State#position.actions == []->
     {noreply, State#position{timeout = Time}};
 handle_cast({stop_motor, Time}, State) ->
     motor:stop(),
-    S = State#position{actions = T, timeout = Time},
     [H | T] = State#position.actions,
+    S = State#position{actions = T, timeout = Time},
     case element(1, H) of
 	execute ->
             io:format("executing: ~p~n",[H]),
 %%	    NewState = execute_action(H, State),
-	    execute_action(H, State),
+	    execute_action(H, S),
 %%	    {noreply, NewState#position{actions = T, timeout = Time}};
 	    {noreply, S};
 	update ->
 	    io:format("executing: ~p~n",[H]),
-	    NewState = execute_action(H, State),
+	    UpdatedState = execute_action(H, S),
 %%	    gen_server:cast(?SERVER, {update_state, NewState#position{actions = T, timeout = 0}})
 	    chronos:start_timer(motor_ts, motor_stop, 50, {position, stop_motor, [Time]}),	    
-	    {noreply, NewState#position{actions = T, timeout = Time}}
+%%	    {noreply, NewState#position{actions = T, timeout = 0}}
+	    {noreply, UpdatedState}
     end;
 
 handle_cast(stop, State) ->
@@ -300,23 +301,23 @@ execute_action({execute, theta, 180}, State) ->
 %% update x: start point is =< of end point
 execute_action({update, x}, State) when State#position.pending == actions1; 
 						State#position.pending == actions4 ->
-    State#position{x = State#position.x + State#position.timeout};
+    State#position{x = State#position.x + State#position.timeout, timeout = 0};
 
 %% update x: start point is >= of end point
 execute_action({update, x}, State) when State#position.pending == actions2;
 						State#position.pending == actions3 ->
-    State#position{x = State#position.x - State#position.timeout};
+    State#position{x = State#position.x - State#position.timeout, timeout = 0};
 %% update y: start point is =< of end point
 execute_action({update, y}, State) when State#position.pending == actions1;
 						State#position.pending == actions3 ->
-    State#position{y = State#position.y + State#position.timeout};
+    State#position{y = State#position.y + State#position.timeout, timeout = 0};
 %% update y: start point is >= of end point
 execute_action({update, y}, State) when State#position.pending == actions2;
 						State#position.pending == actions4 ->
-    State#position{y = State#position.y - State#position.timeout};
+    State#position{y = State#position.y - State#position.timeout, timeout = 0};
 %% update theta
 execute_action({update, theta, V}, State) ->
-    State#position{theta=V}.
+    State#position{theta=V, timeout = 0}.
 
 %% start_actions([H | T], State) ->
 %%     io:format("executing: ~p~n",[H]),
