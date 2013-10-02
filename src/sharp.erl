@@ -3,7 +3,11 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, stop/0, read/0, alarm_obstacle/0]).
+-export([start_link/0,
+         stop/0,
+         read/0,
+         alarm_obstacle/0,
+         ignore_obstacle/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -17,6 +21,12 @@
 -define(SPISPEED, 9600).
 -define(SPIDELAY, 10).
 
+%% All that are interested in knowing if sharp has detected anything
+%% will be on the listener list. When sharp detects something a
+%% message is sent to all listeners and the list will be cleared.
+-record(state,
+        { listeners = [] :: [pid()]
+        }).
 
 %%%===================================================================
 %%% API
@@ -39,7 +49,10 @@ read() ->
     gen_server:call(?SERVER, {call, read}).
 
 alarm_obstacle() ->
-ok.%%    gen_server:cast(?SERVER, {cast, alarm_obstacle}).
+    gen_server:cast(?SERVER, {alarm_obstacle, self()}).
+
+ignore_obstacle() ->
+    gen_server:cast(?SERVER, {ignore_obstacle, self()}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -59,7 +72,8 @@ ok.%%    gen_server:cast(?SERVER, {cast, alarm_obstacle}).
 init([]) ->
     spi:start_link({?SPICHANNEL, "/dev/spidev0.0"}),   
     spi:config(?SPICHANNEL, ?SPIMODE, ?SPIBPW, ?SPISPEED, ?SPIDELAY),
-    {ok, []}.
+    {ok, _} = chronos:start_link(sharp_ts),
+    {ok, #state{}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -89,15 +103,32 @@ handle_call({call, read}, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({cast, alarm_obstacle, Timeout, {Mod, Func, Arg}}, State) ->
-    case wait_obstacle(Timeout) of
-	obstacle ->
-	    apply(Mod, Func, Arg);
-	timeout ->
-	    ok
-    end,
-    {noreply, State};
 
+%% handle_cast({alarm_obstacle, From}, #state{listeners=[]}=State) ->
+%% %%    start_timer(),
+%%     {noreply, State#state{listeners=[From]}};
+
+handle_cast({alarm_obstacle, From}, #state{listeners=Ls}=State) ->
+    start_timer(),
+    {noreply, State#state{listeners=[From|Ls]}};
+
+handle_cast({ignore_obstacle, From}, #state{listeners=Ls}=State) ->
+    {noreply, State#state{listeners=lists:delete(From, Ls)}};
+
+handle_cast(read_distance, #state{listeners=Ls}=State) ->
+    case obstacle_present() of
+        true ->
+%%	    lists:foreach(fun() ->
+            lists:map(fun(L) ->
+			      L ! obstacle_present
+		      end,
+		      Ls),
+            {noreply, State#state{listeners=[]}};
+        false ->
+	    start_timer(),
+            {noreply, State}
+    end;
+         
 handle_cast(stop, State) ->
     {stop, normal, State}.
 
@@ -126,6 +157,7 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
+    stop_timer(),
     ok.
 
 %%--------------------------------------------------------------------
@@ -154,24 +186,16 @@ read_distance() ->
 	    41.543 * math:pow(Volts + 0.30221, -1.5281) 
     end.
 
-wait_obstacle(Timeout) ->
-    wait_obstacle(now(), Timeout, read_distance()).
-
-wait_obstacle(StartTime, Timeout, {error, out_of_range}) ->
-    case (timer:now_diff(now(), StartTime) * 0.001) =< Timeout of
-	true ->
-	    timer:sleep(10),
-	    wait_obstacle(StartTime, Timeout, read_distance());
-	false ->
-	    timeout
-    end;
-wait_obstacle(_StartTime, _Timeout, Distance) when Distance =< 6.5 ->
-    obstacle;
-wait_obstacle(StartTime, Timeout, _Distance) ->
-    case (timer:now_diff(now(), StartTime) * 0.001) =< Timeout of
-	true ->
-	    timer:sleep(10),
-	    wait_obstacle(StartTime, Timeout, read_distance());
-	false ->
-	    timeout
+obstacle_present() ->
+    case read_distance() of
+        Distance when Distance =< 6.5 ->
+            true;
+        _ ->
+            false
     end.
+
+start_timer() ->
+    chronos:start_timer(sharp_ts, read_timer, 10, {gen_server, cast, [?SERVER, read_distance]}).
+
+stop_timer() ->
+    chronos:stop_timer(sharp_ts, read_timer).
