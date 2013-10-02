@@ -13,8 +13,8 @@
 
 -define(SERVER, ?MODULE). 
 
--define(D90, 535). %% 90 degrees in milliseconds
--define(D180, 1222). %% 180 degrees in milliseconds
+%% -define(D90, 535). %% 90 degrees in milliseconds
+%% -define(D180, 1222). %% 180 degrees in milliseconds
 
 -record(state, {requestor = undefined, timeout = 0}).
 
