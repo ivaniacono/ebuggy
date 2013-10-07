@@ -17,10 +17,14 @@ init:
 all: init ebuggy
 
 ebuggy:
-	erlc -o ebin/ src/*.erl
+	erlc -I deps/enigma/include -o ebin/ src/*.erl
 
 shell: 
 	sudo erl -pz deps/erlang_ale/deps/*/ebin -pz deps/*/ebin -pz ebin 
 
 clean:
 	rm -rf *.beam ebin/*.beam
+
+start:
+	sudo erl -noshell -pz deps/erlang_ale/deps/*/ebin -pz deps/*/ebin -pz ebin -s start_enigma start
+	exit 0
