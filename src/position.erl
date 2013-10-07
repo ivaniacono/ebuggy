@@ -9,15 +9,15 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--export([go_to_point/2, now/0, stop_motor/1]).
+-export([go_to_point/3, now/0, stop_motor/1]).
 
 -define(SERVER, ?MODULE). 
 
 %% -define(D90, 535). %% 90 degrees in milliseconds
 %% -define(D180, 1222). %% 180 degrees in milliseconds
 
--define(D90, 650). %% 90 degrees in milliseconds
--define(D180, 1480). %% 180 degrees in milliseconds
+-define(D90, 665). %% 90 degrees in milliseconds
+-define(D180, 1460). %% 180 degrees in milliseconds
 
 -record(position, 
 	{x = 0, y = 0, theta = 0,
@@ -41,8 +41,8 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-go_to_point(X, Y) ->
-    gen_server:call(?SERVER, {go_to_point, X, Y}, infinity).
+go_to_point(X, Y, Theta) ->
+    gen_server:call(?SERVER, {go_to_point, X, Y, Theta}, infinity).
 
 now() ->
     gen_server:call(?SERVER, now).
@@ -96,30 +96,42 @@ handle_call(now, _From, State) ->
 
 %% 1st CASE ACTIONS SET
 
-handle_call({go_to_point, X, Y}, From, State) when State#position.x < X, State#position.y == Y ->
+handle_call({go_to_point, X, Y, Theta}, From, State) when State#position.x == X, State#position.y == Y ->
+
+    Actions1 = [{execute, theta, Theta},
+		{update, theta, Theta}],
+
+    gen_server:cast(?SERVER, {stop_motor, 0}),
+    {noreply, State#position{actions = Actions1, requestor = From, pending = actions1}};
+
+handle_call({go_to_point, X, Y, Theta}, From, State) when State#position.x < X, State#position.y == Y ->
     DeltaX = X - State#position.x, 
 
     Actions1 = [{execute, theta, 0},
 		{update, theta, 0},
     		{execute, forward, DeltaX},
-    		{update, x}],
+    		{update, x},
+	        {execute, theta, Theta},
+	        {update, theta, Theta}],
 
     gen_server:cast(?SERVER, {stop_motor, 0}),
     {noreply, State#position{actions = Actions1, requestor = From, pending = actions1}};
 
-handle_call({go_to_point, X, Y}, From, State) when State#position.x == X, State#position.y < Y ->
+handle_call({go_to_point, X, Y, Theta}, From, State) when State#position.x == X, State#position.y < Y ->
     DeltaY = Y - State#position.y,
 
     Actions1 = [{execute, theta, 90},
 		{update, theta, 90},
     		{execute, forward, DeltaY},
-    		{update, y}],
+    		{update, y},
+	        {execute, theta, Theta},
+	        {update, theta, Theta}],
 
     gen_server:cast(?SERVER, {stop_motor, 0}),
     {noreply, State#position{actions = Actions1, requestor = From, pending = actions1}};
 
 
-handle_call({go_to_point, X, Y}, From, State) when State#position.x < X, State#position.y < Y ->
+handle_call({go_to_point, X, Y, Theta}, From, State) when State#position.x < X, State#position.y < Y ->
     DeltaX = X - State#position.x, 
     DeltaY = Y - State#position.y,
 
@@ -130,36 +142,43 @@ handle_call({go_to_point, X, Y}, From, State) when State#position.x < X, State#p
 		{execute, theta, 90},
 		{update, theta, 90},    		
 		{execute, forward, DeltaY},
-    	        {update, y}],
+    	        {update, y},
+	        {execute, theta, Theta},
+	        {update, theta, Theta}],
 
     gen_server:cast(?SERVER, {stop_motor, 0}),
     {noreply, State#position{actions = Actions1, requestor = From, pending = actions1}};
 
 %% 2nd CASE ACTIONS SET
 
-handle_call({go_to_point, X, Y}, From, State) when State#position.x > X, State#position.y == Y ->
+handle_call({go_to_point, X, Y, Theta}, From, State) when State#position.x > X, State#position.y == Y ->
     DeltaX = State#position.x - X,
 
     Actions2 = [{execute, theta, 180},
 		{update, theta, 180},
     		{execute, forward, DeltaX},
-    		{update, x}],
+    		{update, x},
+	        {execute, theta, Theta},
+	        {update, theta, Theta}],
 
     gen_server:cast(?SERVER, {stop_motor, 0}),
     {noreply, State#position{actions = Actions2, requestor = From, pending = actions2}};
 
-handle_call({go_to_point, X, Y}, From, State) when State#position.x == X, State#position.y > Y ->
+handle_call({go_to_point, X, Y, Theta}, From, State) when State#position.x == X, State#position.y > Y ->
+
     DeltaY = State#position.y - Y,
 
     Actions2 = [{execute, theta, 270},
 		{update, theta, 270},
     		{execute, forward, DeltaY},
-    		{update, y}],
+    		{update, y},
+	        {execute, theta, Theta},
+	        {update, theta, Theta}],
 
     gen_server:cast(?SERVER, {stop_motor, 0}),
     {noreply, State#position{actions = Actions2, requestor = From, pending = actions2}};
 
-handle_call({go_to_point, X, Y}, From, State) when State#position.x > X, State#position.y > Y ->
+handle_call({go_to_point, X, Y, Theta}, From, State) when State#position.x > X, State#position.y > Y ->
     DeltaX = State#position.x - X,
     DeltaY = State#position.y - Y,
 
@@ -170,14 +189,16 @@ handle_call({go_to_point, X, Y}, From, State) when State#position.x > X, State#p
 		{execute, theta, 270},
 		{update, theta, 270},    		
 		{execute, forward, DeltaY},
-    	        {update, y}],    
+    	        {update, y},
+	        {execute, theta, Theta},
+	        {update, theta, Theta}],
 
     gen_server:cast(?SERVER, {stop_motor, 0}),
     {noreply, State#position{actions = Actions2, requestor = From, pending = actions2}};
 
 %% 3rd CASE ACTIONS SET
 
-handle_call({go_to_point, X, Y}, From, State) when State#position.x > X, State#position.y < Y ->
+handle_call({go_to_point, X, Y, Theta}, From, State) when State#position.x > X, State#position.y < Y ->
     DeltaX = State#position.x - X,
     DeltaY = Y - State#position.y,
 
@@ -188,14 +209,16 @@ handle_call({go_to_point, X, Y}, From, State) when State#position.x > X, State#p
 		{execute, theta, 90},
 		{update, theta, 90},
 		{execute, forward, DeltaY},
-    	        {update, y}],
+    	        {update, y},
+	        {execute, theta, Theta},
+	        {update, theta, Theta}],
 
     gen_server:cast(?SERVER, {stop_motor, 0}),
     {noreply, State#position{actions=Actions3, requestor = From, pending = actions3}};
 
 %% 4th CASE ACTIONS SET
 
-handle_call({go_to_point, X, Y}, From, State) when State#position.x < X, State#position.y > Y ->
+handle_call({go_to_point, X, Y, Theta}, From, State) when State#position.x < X, State#position.y > Y ->
     DeltaX = X - State#position.x,
     DeltaY = State#position.y - Y,
 
@@ -206,7 +229,9 @@ handle_call({go_to_point, X, Y}, From, State) when State#position.x < X, State#p
 		{execute, theta, 270},
 		{update, theta, 270},
 		{execute, forward, DeltaY},
-    	        {update, y}],
+    	        {update, y},
+	        {execute, theta, Theta},
+	        {update, theta, Theta}],
 
     gen_server:cast(?SERVER, {stop_motor, 0}),
     {noreply, State#position{actions=Actions4, requestor = From, pending = actions4}}.
@@ -327,7 +352,7 @@ execute_action({execute, theta, 0}, State) ->
 execute_action({execute, theta, 180}, State) ->
     case State#position.theta of
 	0 ->
-	    execute_action({execute, rotate, right, ?D180}, State);
+	    execute_action({execute, rotate, left, ?D180}, State);
 	90 ->
 	    execute_action({execute, rotate, left, ?D90}, State);
 	270 ->
@@ -355,7 +380,7 @@ execute_action({execute, theta, 270}, State) ->
 	180 ->
 	    execute_action({execute, rotate, left, ?D90}, State);
 	90 ->
-	    execute_action({execute, rotate, right, ?D180}, State);
+	    execute_action({execute, rotate, left, ?D180}, State);
 	270 ->
 	    gen_server:cast(?SERVER, {stop_motor, 0})
     end,
