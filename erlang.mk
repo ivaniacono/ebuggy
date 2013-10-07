@@ -73,7 +73,8 @@ COMPILE_FIRST_PATHS = $(addprefix src/,$(addsuffix .erl,$(COMPILE_FIRST)))
 #all: deps app
 all: deps
 
-clean-all: clean clean-deps clean-docs
+#clean-all: clean clean-deps clean-docs
+clean-all: clean-deps clean-docs
 	$(gen_verbose) rm -rf .$(PROJECT).plt $(DEPS_DIR) logs
 
 app: ebin/$(PROJECT).app
@@ -118,8 +119,8 @@ ebin/$(PROJECT).app: $(shell find src -type f -name \*.erl) \
 	$(if $(strip $(filter %.dtl,$?)), \
 		$(call compile_dtl,$(filter %.dtl,$?)))
 
-clean:
-	$(gen_verbose) rm -rf ebin/ test/*.beam erl_crash.dump
+#clean:
+#	$(gen_verbose) rm -rf ebin/ test/*.beam erl_crash.dump
 
 # Dependencies.
 
