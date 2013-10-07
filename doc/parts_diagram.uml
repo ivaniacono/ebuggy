@@ -1,0 +1,28 @@
+@startuml
+
+title EBuggy Parts Diagram
+
+[Raspberry Pi]
+
+frame "I2C Devices" {
+  [Raspberry Pi] --> I2C
+  I2C -> [Servo Driver]
+}
+
+frame "PWM Devices" {
+  [Servo Driver] --> PWM
+  PWM -right-> [Right Motor]
+  PWM -left-> [Left Motor]
+  PWM -down-> [Arm Servo]
+}
+
+frame "SPI Devices" {
+  [Raspberry Pi] --> SPI
+  SPI -> [A/D Converter]
+}
+
+frame "Analog Devices" {
+  [A/D Converter] --> [SHARP IR]
+}
+
+@enduml
