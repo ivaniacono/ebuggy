@@ -3,7 +3,7 @@
 title EBuggy Parts Diagram
 
 frame "Embedded Computer" {
-[Raspberry Pi]
+  [Raspberry Pi]
 }
 
 frame "I2C Devices" {

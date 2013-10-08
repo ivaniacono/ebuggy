@@ -1,3 +1,9 @@
+%%% @author Ivan Iacono <ivan.iacono@erlang-solutions.com> - Erlang Solutions Ltd
+%%% @copyright (C) 2013, Erlang Solutions Ltd
+%%% @doc This is the sharp ir sensor library used to send a message when an obstacle is detected.
+%%% @end
+
+
 -module(sharp).
 
 -behaviour(gen_server).

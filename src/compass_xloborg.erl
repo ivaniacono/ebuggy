@@ -1,3 +1,8 @@
+%%% @author Ivan Iacono <ivan.iacono@erlang-solutions.com> - Erlang Solutions Ltd
+%%% @copyright (C) 2013, Erlang Solutions Ltd
+%%% @doc This is the erlang implementation for the xloborg module for raspberry pi.
+%%% @end
+
 -module(compass_xloborg).
 
 -compile(export_all).

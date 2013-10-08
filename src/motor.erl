@@ -1,3 +1,8 @@
+%%% @author Ivan Iacono <ivan.iacono@erlang-solutions.com> - Erlang Solutions Ltd
+%%% @copyright (C) 2013, Erlang Solutions Ltd
+%%% @doc This is the motor library implementation.
+%%% @end
+
 -module(motor).
 
 -behaviour(gen_server).

@@ -1,3 +1,8 @@
+%%% @author Ivan Iacono <ivan.iacono@erlang-solutions.com> - Erlang Solutions Ltd
+%%% @copyright (C) 2013, Erlang Solutions Ltd
+%%% @doc This is the erlang implementation for the hmcxxx compass module.
+%%% @end
+
 -module(compass).
 
 -behaviour(gen_server).

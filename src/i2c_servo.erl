@@ -1,3 +1,8 @@
+%%% @author Ivan Iacono <ivan.iacono@erlang-solutions.com> - Erlang Solutions Ltd
+%%% @copyright (C) 2013, Erlang Solutions Ltd
+%%% @doc This is the implementation for the Adafruit 16-Channel 12-bit PWM/Servo Driver.
+%%% @end
+
 -module(i2c_servo).
 -export([init/0, setPWMFreq/1, setPWM/3]).
 

@@ -1,6 +1,6 @@
 PROJECT = ebuggy
 
-DEPS = chronos erlang_ale
+DEPS = chronos erlang_ale enigma
 
 dep_erlang_ale = https://github.com/esl/erlang_ale master
 dep_chronos = https://github.com/lehoff/chronos master
@@ -13,6 +13,7 @@ REBAR_DEPS_DIR=${DEPS_DIR}
 init:
 	mkdir -p ebin
 	ln -s deps/erlang_ale/priv
+	rm -rf deps/enigma/ebin/goal_function.beam
 
 all: init ebuggy
 

@@ -1,3 +1,8 @@
+%%% @author Ivan Iacono <ivan.iacono@erlang-solutions.com> - Erlang Solutions Ltd
+%%% @copyright (C) 2013, Erlang Solutions Ltd
+%%% @doc This is the position library used to know the position of the robot.
+%%% @end
+
 -module(position).
 
 -behaviour(gen_server).
@@ -15,8 +20,8 @@
 
 %% -define(D90, 535). %% 90 degrees in milliseconds
 %% -define(D180, 1222). %% 180 degrees in milliseconds
-
--define(D90, 665). %% 90 degrees in milliseconds
+%% 665
+-define(D90, 655). %% 90 degrees in milliseconds
 -define(D180, 1460). %% 180 degrees in milliseconds
 
 -record(position, 

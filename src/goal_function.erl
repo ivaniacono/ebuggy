@@ -25,7 +25,8 @@ init_goal() ->
     position:start_link(),
     goal_db:add_goal(pocket1()),
     goal_db:add_goal(pocket2()),    
-    goal_db:add_goal(pocket3()).
+    goal_db:add_goal(pocket3()),
+    goal_db:add_goal(funny()).
 
 %%---------------------------------------------------------------------------------
 %% @doc
@@ -77,6 +78,15 @@ pocket3() ->
 	  execute_function = {?MODULE, pocket3_execute},
 	  max_trials = 2}.
 
+funny() ->
+    #goal{id = funny,
+	  type = simple,
+	  state = state,
+	  feasibility_function = {?MODULE, funny_feasibility},
+	  priority_function = {?MODULE, funny_priority},
+	  execute_function = {?MODULE, funny_execute},
+	  max_trials = 2}.
+
 %%-----------------------------------------------------------------------
 %% @doc
 %% Define a Goal Feasibility function.
@@ -115,6 +125,9 @@ pocket3_feasibility(_Goal, State) ->
     %% 	    {false, State}
     %% end.
 
+funny_feasibility(_Goal, State) ->
+    {true, State}.
+
 %%-----------------------------------------------------------------
 %% @doc
 %% Define a Goal Priority function.
@@ -131,6 +144,9 @@ pocket2_priority(_Goal, State) ->
 
 pocket3_priority(_Goal, State) ->
     {3, State}.
+
+funny_priority(_Goal, State) ->
+    {4, State}.
 
 %%--------------------------------------------------------------------------
 %% @doc
@@ -168,16 +184,39 @@ pocket2_execute(_Goal, State) ->
 
 pocket3_execute(_Goal, State) ->
 %%    position:go_to_point(300, 3500, 270),
+    i2c_servo:setPWM(15, 0, 600),
+    position:go_to_point(2300, 2700, 90),
     i2c_servo:setPWM(15, 0, 150),
-    position:go_to_point(2300, 3000, 90),
-    position:go_to_point(300, 3000, 180),
+    position:go_to_point(400, 2700, 180),
     %% i2c_servo:setPWM(15, 0, 150),
     %% timer:sleep(1000),
     i2c_servo:setPWM(15, 0, 600),
     case position:now() of
 %%	{300, 3500, 270} ->
-	{300, 3000, 180} ->
+	{400, 2700, 180} ->
 	    {success, State};
 	_ ->
 	{fail, State}
     end.
+
+funny_execute(_Goal, State) ->
+    i2c_servo:setPWM(15, 0, 600),
+    position:go_to_point(2000, 2000, 270),
+    motor:rotate(left),
+    i2c_servo:setPWM(15, 0, 150),
+    timer:sleep(500),
+    i2c_servo:setPWM(15, 0, 600),
+    timer:sleep(500),
+    i2c_servo:setPWM(15, 0, 150),
+    timer:sleep(500),
+    i2c_servo:setPWM(15, 0, 600),
+    timer:sleep(500),
+    i2c_servo:setPWM(15, 0, 150),
+    timer:sleep(500),
+    i2c_servo:setPWM(15, 0, 600),
+    timer:sleep(500),
+    i2c_servo:setPWM(15, 0, 150),
+    timer:sleep(500),
+    i2c_servo:setPWM(15, 0, 600),
+    motor:stop(),
+    {success, State}.
